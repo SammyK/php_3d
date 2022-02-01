@@ -4,8 +4,10 @@
 # include "config.h"
 #endif
 
-#include "php.h"
-#include "ext/standard/info.h"
+#include <php.h>
+#include <ext/standard/info.h>
+#include <SketchUpAPI/initialize.h>
+
 #include "php_3d.h"
 
 PHP_RINIT_FUNCTION(php_3d)
@@ -21,6 +23,17 @@ PHP_MINFO_FUNCTION(php_3d)
 {
 	php_info_print_table_start();
 	php_info_print_table_header(2, "3D support", "enabled");
+	php_info_print_table_row(2, "SketchUpAPI path", PHP_SKETCHUP_API_PATH);
+
+	char tmp[10];
+	SUInitialize();
+	size_t major = 0;
+	size_t minor = 0;
+	SUGetAPIVersion(&major, &minor);
+	snprintf(tmp, sizeof(tmp), "%zu.%zu", major, minor);
+	php_info_print_table_row(2, "SketchUpAPI version", tmp);
+	SUTerminate();
+
 	php_info_print_table_end();
 }
 
