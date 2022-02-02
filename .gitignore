@@ -41,3 +41,5 @@ tests/**/*.mem
 tmp-php.ini
 
 sandbox
+*~.skp
+out.skp
