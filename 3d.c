@@ -6,9 +6,21 @@
 
 #include <php.h>
 #include <ext/standard/info.h>
-#include <SketchUpAPI/initialize.h>
 
 #include "php_3d.h"
+#include "sketchup.h"
+
+PHP_MINIT_FUNCTION(php_3d)
+{
+	sketchup_startup();
+	return SUCCESS;
+}
+
+PHP_MSHUTDOWN_FUNCTION(php_3d)
+{
+	sketchup_shutdown();
+	return SUCCESS;
+}
 
 PHP_RINIT_FUNCTION(php_3d)
 {
@@ -24,15 +36,9 @@ PHP_MINFO_FUNCTION(php_3d)
 	php_info_print_table_start();
 	php_info_print_table_header(2, "3D support", "enabled");
 	php_info_print_table_row(2, "SketchUpAPI path", PHP_SKETCHUP_API_PATH);
-
 	char tmp[10];
-	SUInitialize();
-	size_t major = 0;
-	size_t minor = 0;
-	SUGetAPIVersion(&major, &minor);
-	snprintf(tmp, sizeof(tmp), "%zu.%zu", major, minor);
+	sketchup_sdk_version(sizeof(tmp), tmp);
 	php_info_print_table_row(2, "SketchUpAPI version", tmp);
-	SUTerminate();
 
 	php_info_print_table_end();
 }
@@ -41,8 +47,8 @@ zend_module_entry php_3d_module_entry = {
 	STANDARD_MODULE_HEADER,
 	"php_3d",					/* Extension name */
 	NULL,						/* zend_function_entry */
-	NULL,						/* PHP_MINIT - Module initialization */
-	NULL,						/* PHP_MSHUTDOWN - Module shutdown */
+	PHP_MINIT(php_3d),			/* PHP_MINIT - Module initialization */
+	PHP_MSHUTDOWN(php_3d),		/* PHP_MSHUTDOWN - Module shutdown */
 	PHP_RINIT(php_3d),			/* PHP_RINIT - Request initialization */
 	NULL,						/* PHP_RSHUTDOWN - Request shutdown */
 	PHP_MINFO(php_3d),			/* PHP_MINFO - Module info */

@@ -266,3 +266,10 @@ bool sketchup_room_append_variable(sketchup_room room, sketchup_val val) {
 	SUComponentInstanceRef instance = (SUComponentInstanceRef) {.ptr = room.ptr};
 	return true;
 }
+
+void sketchup_sdk_version(size_t bufsiz, char *version) {
+	size_t major = 0;
+	size_t minor = 0;
+	SUGetAPIVersion(&major, &minor);
+	snprintf(version, bufsiz, "%zu.%zu", major, minor);
+}

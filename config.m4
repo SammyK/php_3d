@@ -26,5 +26,5 @@ if test "$PHP_3D" != "no"; then
   EXTRA_LDFLAGS="$EXTRA_LDFLAGS -F$SKETCHUP_DIR -framework SketchUpAPI -rpath $SKETCHUP_DIR"
 
   AC_DEFINE(HAVE_3D, 1, [ Have 3D support ])
-  PHP_NEW_EXTENSION(php_3d, 3d.c, $ext_shared, , $PHP_3D_CFLAGS)
+  PHP_NEW_EXTENSION(php_3d, 3d.c sketchup.c, $ext_shared, , $PHP_3D_CFLAGS)
 fi
