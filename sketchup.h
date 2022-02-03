@@ -32,7 +32,7 @@ bool sketchup_building_append_room(sketchup_building building, const char *name,
 bool sketchup_building_save(sketchup_building building, const char *file);
 bool sketchup_building_dtor(sketchup_building building);
 
-bool sketchup_room_append_variable(sketchup_building building, size_t room_index, sketchup_val val);
+bool sketchup_room_append_variable(sketchup_building building, size_t room_index, size_t var_index, const char *name, sketchup_val val);
 
 void sketchup_sdk_version(size_t bufsiz, char *version);
 

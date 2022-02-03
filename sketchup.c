@@ -149,7 +149,7 @@ static bool sup_copy_geometry(SUEntitiesRef dest, SUEntitiesRef src) {
 }
 
 static bool sup_component_def_load(SUModelRef model, const char *file, SUComponentDefinitionRef *def, struct SUBoundingBox3D *bbox) {
-	printf("Creating component definition from '%s'...\n", file);
+	//printf("Creating component definition from '%s'...\n", file);
 	// Init empty component def, attach to model, and get entities
 	// TODO Free component def if stuff fails below
 	SU_CALL_RETURN(SUComponentDefinitionCreate(def));
@@ -179,17 +179,14 @@ static bool sup_component_def_load(SUModelRef model, const char *file, SUCompone
 	return sup_copy_geometry(dest_entities, src_entities);
 }
 
-static bool sup_component_def_create_instance(SUModelRef model, SUComponentDefinitionRef def, const char *name, SUComponentInstanceRef *instance) {
+static bool sup_component_def_create_instance(SUModelRef model, SUComponentDefinitionRef def, SUComponentInstanceRef *instance) {
 	// Create component instance from definition and attach to model entities
 	// TODO Free the instance if anything fails below
 	SU_CALL_RETURN(SUComponentDefinitionCreateInstance(def, instance));
 	// TODO Convert component instace to group? SUGroupFromComponentInstance()
 	SUEntitiesRef entities = SU_INVALID;
 	SU_CALL_RETURN(SUModelGetEntities(model, &entities));
-	SUStringRef name_utf8 = SU_INVALID;
-	SU_CALL_RETURN(SUStringCreateFromUTF8(&name_utf8, name));
-	SU_CALL_RETURN(SUEntitiesAddInstance(entities, *instance, &name_utf8));
-	SU_CALL_RETURN(SUComponentInstanceSetName(*instance, name));
+	SU_CALL_RETURN(SUEntitiesAddInstance(entities, *instance, NULL));
 	return true;
 }
 
@@ -251,11 +248,17 @@ bool sketchup_building_append_room(sketchup_building building, const char *name,
 	SUComponentInstanceRef *room = &bi->rooms[room_index];
 	if (room->ptr) return false;
 
-	if (!sup_component_def_create_instance(bi->model, bi->room_def, name, room)) return false;
+	if (!sup_component_def_create_instance(bi->model, bi->room_def, room)) return false;
+	SU_CALL_RETURN(SUComponentInstanceSetName(*room, name));
+
+	// TODO Create a SUTextRef to display room name
 
 	// Move room to proper offset on y axis. We assume all components on y axis have the same y length.
-	double y_axis = (bi->room_bbox.max_point.y * (double) room_index);
-	struct SUVector3D point = {0.0, y_axis /* Follow the white rabbit */, 0.0};
+	struct SUVector3D point = {
+		0.0,
+		(bi->room_bbox.max_point.y * (double) room_index), /* Follow the white rabbit */
+		0.0
+	};
 	if (!sup_component_instance_move(*room, point)) return false;
 	return true;
 }
@@ -273,10 +276,33 @@ bool sketchup_building_dtor(sketchup_building building) {
 	return (res == SU_ERROR_NONE);
 }
 
-bool sketchup_room_append_variable(sketchup_building building, size_t room_index, sketchup_val val) {
+#define WALL_WIDTH 6.0
+#define ROOM_PAD 24.0
+#define VAR_PAD 12.0
+
+bool sketchup_room_append_variable(sketchup_building building, size_t room_index, size_t var_index, const char *name, sketchup_val val) {
 	sup_building_impl *bi = BI(building);
 	if (room_index >= SUP_MAX_ROOMS) return false;
-	SUComponentInstanceRef room = bi->rooms[room_index];
+
+	SUComponentInstanceRef var = SU_INVALID;
+	if (!sup_component_def_create_instance(bi->model, bi->var_def, &var)) return false;
+	SU_CALL_RETURN(SUComponentInstanceSetName(var, name));
+
+	// TODO Create a SUTextRef to display name & var data
+
+	// Calculate var location relative to room
+	double room_height = bi->room_bbox.max_point.y - WALL_WIDTH /* Rooms have only one wall on y axis */;
+	double var_height = bi->var_bbox.max_point.y + VAR_PAD;
+	size_t max_per_column = (size_t) (room_height / var_height);
+
+	double var_width = bi->var_bbox.max_point.x + VAR_PAD;
+	double x_axis = ROOM_PAD + var_width * (double) (var_index / max_per_column);
+
+	double room_top = bi->room_bbox.max_point.y * ((double) room_index + 1.0);
+	double y_axis = room_top - ROOM_PAD - (var_height * (double) (var_index % max_per_column));
+
+	struct SUVector3D point = {x_axis, y_axis, 0.0};
+	if (!sup_component_instance_move(var, point)) return false;
 	return true;
 }
 
