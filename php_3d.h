@@ -12,4 +12,14 @@ extern zend_module_entry php_3d_module_entry;
 ZEND_TSRMLS_CACHE_EXTERN()
 # endif
 
+ZEND_BEGIN_MODULE_GLOBALS(php_3d)
+	int generate_model;
+ZEND_END_MODULE_GLOBALS(php_3d)
+
+#ifdef ZTS
+#define PHP3D_G(v) TSRMG(php_3d_globals_id, zend_php_3d_globals *, v)
+#else
+#define PHP3D_G(v) (php_3d_globals.v)
+#endif
+
 #endif	/* PHP_3D_H */

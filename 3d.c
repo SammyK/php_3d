@@ -11,6 +11,8 @@
 #include "php_3d.h"
 #include "sketchup.h"
 
+ZEND_DECLARE_MODULE_GLOBALS(php_3d)
+
 void php3d_fcall_begin_handler(zend_execute_data *execute_data) {
 	//
 }
@@ -23,8 +25,20 @@ zend_observer_fcall_handlers php3d_observer_fcall_init(zend_execute_data *execut
 	return (zend_observer_fcall_handlers) {php3d_fcall_begin_handler, php3d_fcall_end_handler};
 }
 
+static void php_3d_init_globals(zend_php_3d_globals *g)
+{
+	g->generate_model = 0;
+}
+
+PHP_INI_BEGIN()
+	STD_PHP_INI_BOOLEAN("php_3d.generate_model", "0", PHP_INI_SYSTEM, OnUpdateBool, generate_model, zend_php_3d_globals, php_3d_globals)
+PHP_INI_END()
+
 PHP_MINIT_FUNCTION(php_3d)
 {
+	ZEND_INIT_MODULE_GLOBALS(php_3d, php_3d_init_globals, NULL);
+	REGISTER_INI_ENTRIES();
+
 	zend_observer_fcall_register(php3d_observer_fcall_init);
 	sketchup_startup();
 	return SUCCESS;
