@@ -28,11 +28,11 @@ void sketchup_shutdown(void);
 
 // sketchup_startup() must have been called before calling any of the functions below
 bool sketchup_building_ctor(sketchup_building *building);
-bool sketchup_building_append_room(sketchup_building building, const char *name, double offset, sketchup_room *room);
+bool sketchup_building_append_room(sketchup_building building, const char *name, size_t room_index);
 bool sketchup_building_save(sketchup_building building, const char *file);
 bool sketchup_building_dtor(sketchup_building building);
 
-bool sketchup_room_append_variable(sketchup_room room, sketchup_val val);
+bool sketchup_room_append_variable(sketchup_building building, size_t room_index, sketchup_val val);
 
 void sketchup_sdk_version(size_t bufsiz, char *version);
 

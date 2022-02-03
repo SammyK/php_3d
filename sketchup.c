@@ -185,6 +185,7 @@ static bool sup_component_def_create_instance(SUModelRef model, SUComponentDefin
 	SUStringRef name_utf8 = SU_INVALID;
 	SU_CALL_RETURN(SUStringCreateFromUTF8(&name_utf8, name));
 	SU_CALL_RETURN(SUEntitiesAddInstance(entities, *instance, &name_utf8));
+	SU_CALL_RETURN(SUComponentInstanceSetName(*instance, name));
 	return true;
 }
 
@@ -211,13 +212,13 @@ static bool sup_component_instance_move(SUComponentInstanceRef instance, double 
 void sketchup_startup(void) { SUInitialize(); }
 void sketchup_shutdown(void) { SUTerminate(); }
 
+#define SUP_MAX_ROOMS 256
+
 // Ideally we'd track component defs on the model, but there seems to be a bug in the SketchUpAPI with getting the def name, description and Guid
 typedef struct sup_building_impl_s {
 	SUModelRef model;
 	SUComponentDefinitionRef room_def;
-	// TODO Track rooms via index (since it could access instance and also act as offset)
-	// TODO Set upper-bounds limit on number of rooms
-	//SUComponentInstanceRef rooms[SUP_MAX_ROOMS];
+	SUComponentInstanceRef rooms[SUP_MAX_ROOMS];
 } sup_building_impl;
 
 bool sketchup_building_ctor(sketchup_building *building) {
@@ -239,13 +240,14 @@ bool sketchup_building_ctor(sketchup_building *building) {
 	return true;
 }
 
-bool sketchup_building_append_room(sketchup_building building, const char *name, double offset, sketchup_room *room) {
+bool sketchup_building_append_room(sketchup_building building, const char *name, size_t room_index) {
+	if (room_index >= SUP_MAX_ROOMS) return false;
 	sup_building_impl *building_impl = (sup_building_impl *)building.ptr;
-	SUComponentInstanceRef instance = SU_INVALID;
-	if (!sup_component_def_create_instance(building_impl->model, building_impl->room_def, name, &instance)) return false;
+	SUComponentInstanceRef *room = &building_impl->rooms[room_index];
+	if (room->ptr) return false;
+	if (!sup_component_def_create_instance(building_impl->model, building_impl->room_def, name, room)) return false;
 	// Move instance to proper offset on y axis
-	if (!sup_component_instance_move(instance, offset)) return false;
-	room->ptr = instance.ptr;
+	if (!sup_component_instance_move(*room, (double) room_index)) return false;
 	return true;
 }
 
@@ -262,8 +264,10 @@ bool sketchup_building_dtor(sketchup_building building) {
 	return (res == SU_ERROR_NONE);
 }
 
-bool sketchup_room_append_variable(sketchup_room room, sketchup_val val) {
-	SUComponentInstanceRef instance = (SUComponentInstanceRef) {.ptr = room.ptr};
+bool sketchup_room_append_variable(sketchup_building building, size_t room_index, sketchup_val val) {
+	if (room_index >= SUP_MAX_ROOMS) return false;
+	sup_building_impl *building_impl = (sup_building_impl *)building.ptr;
+	SUComponentInstanceRef room = building_impl->rooms[room_index];
 	return true;
 }
 
