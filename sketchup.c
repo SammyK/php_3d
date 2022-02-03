@@ -148,7 +148,7 @@ static bool sup_copy_geometry(SUEntitiesRef dest, SUEntitiesRef src) {
 	return true;
 }
 
-static bool sup_component_def_load(SUModelRef model, const char *file, SUComponentDefinitionRef *def) {
+static bool sup_component_def_load(SUModelRef model, const char *file, SUComponentDefinitionRef *def, struct SUBoundingBox3D *bbox) {
 	printf("Creating component definition from '%s'...\n", file);
 	// Init empty component def, attach to model, and get entities
 	// TODO Free component def if stuff fails below
@@ -167,6 +167,9 @@ static bool sup_component_def_load(SUModelRef model, const char *file, SUCompone
 	assert(status != SUModelLoadStatus_Success_MoreRecent && "Update SDK version to load this file.");
 	SUEntitiesRef src_entities = SU_INVALID;
 	SU_CALL_RETURN(SUModelGetEntities(src_model, &src_entities));
+
+	// Get the bounding box size
+	SU_CALL_RETURN(SUEntitiesGetBoundingBox(src_entities, bbox));
 
 	// Get dest entities from component def
 	SUEntitiesRef dest_entities = SU_INVALID;
@@ -190,21 +193,9 @@ static bool sup_component_def_create_instance(SUModelRef model, SUComponentDefin
 	return true;
 }
 
-// TODO Refactor this to work with instances of variables too
-static bool sup_component_instance_move(SUComponentInstanceRef instance, double offset) {
-	if (offset <= 0.0) return true;
-	SUComponentDefinitionRef def = SU_INVALID;
-	SU_CALL_RETURN(SUComponentInstanceGetDefinition(instance, &def));
-
-	SUEntitiesRef entities = SU_INVALID;
-	SU_CALL_RETURN(SUComponentDefinitionGetEntities(def, &entities));
-	struct SUBoundingBox3D bbox;
-	SU_CALL_RETURN(SUEntitiesGetBoundingBox(entities, &bbox));
-
-	// We assume all components on y axis have the same y length
+static bool sup_component_instance_move(SUComponentInstanceRef instance, struct SUVector3D point) {
 	struct SUTransformation transform = {0.0};
 	SU_CALL_RETURN(SUComponentInstanceGetTransform(instance, &transform));
-	struct SUVector3D point = {0.0, (bbox.max_point.y * offset) /* Follow the white rabbit */, 0.0};
 	SU_CALL_RETURN(SUTransformationTranslation(&transform, &point));
 	SU_CALL_RETURN(SUComponentInstanceSetTransform(instance, &transform));
 	return true;
@@ -212,6 +203,8 @@ static bool sup_component_instance_move(SUComponentInstanceRef instance, double 
 
 void sketchup_startup(void) { SUInitialize(); }
 void sketchup_shutdown(void) { SUTerminate(); }
+
+#define BI(var) ((sup_building_impl *)var.ptr)
 
 #define SUP_MAX_ROOMS 256
 
@@ -221,6 +214,10 @@ typedef struct sup_building_impl_s {
 	SUComponentDefinitionRef var_def;
 	SUComponentDefinitionRef wall_def;
 	SUComponentDefinitionRef entrance_def;
+	struct SUBoundingBox3D room_bbox;
+	struct SUBoundingBox3D var_bbox;
+	struct SUBoundingBox3D wall_bbox;
+	struct SUBoundingBox3D entrance_bbox;
 	SUComponentInstanceRef rooms[SUP_MAX_ROOMS];
 } sup_building_impl;
 
@@ -230,52 +227,56 @@ bool sketchup_building_ctor(sketchup_building *building) {
 	enum SUResult res = SUModelCreate(&model);
 	if (res != SU_ERROR_NONE) return false;
 
-	sup_building_impl *building_impl = (sup_building_impl *)calloc(1, sizeof(sup_building_impl));
-	building_impl->model = model;
+	sup_building_impl *bi = (sup_building_impl *)calloc(1, sizeof(sup_building_impl));
+	bi->model = model;
 
 	if (
-		!sup_component_def_load(model, "models/room.skp", &building_impl->room_def) ||
-		!sup_component_def_load(model, "models/var.skp", &building_impl->var_def) ||
-		!sup_component_def_load(model, "models/wall.skp", &building_impl->wall_def) ||
-		!sup_component_def_load(model, "models/entrance.skp", &building_impl->entrance_def)
+		!sup_component_def_load(model, "models/room.skp", &bi->room_def, &bi->room_bbox) ||
+		!sup_component_def_load(model, "models/var.skp", &bi->var_def, &bi->var_bbox) ||
+		!sup_component_def_load(model, "models/wall.skp", &bi->wall_def, &bi->wall_bbox) ||
+		!sup_component_def_load(model, "models/entrance.skp", &bi->entrance_def, &bi->entrance_bbox)
 	) {
 		SUModelRelease(&model);
-		free(building_impl);
+		free(bi);
 		return false;
 	}
 
-	building->ptr = building_impl;
+	building->ptr = bi;
 	return true;
 }
 
 bool sketchup_building_append_room(sketchup_building building, const char *name, size_t room_index) {
 	if (room_index >= SUP_MAX_ROOMS) return false;
-	sup_building_impl *building_impl = (sup_building_impl *)building.ptr;
-	SUComponentInstanceRef *room = &building_impl->rooms[room_index];
+	sup_building_impl *bi = BI(building);
+	SUComponentInstanceRef *room = &bi->rooms[room_index];
 	if (room->ptr) return false;
-	if (!sup_component_def_create_instance(building_impl->model, building_impl->room_def, name, room)) return false;
-	// Move instance to proper offset on y axis
-	if (!sup_component_instance_move(*room, (double) room_index)) return false;
+
+	if (!sup_component_def_create_instance(bi->model, bi->room_def, name, room)) return false;
+
+	// Move room to proper offset on y axis. We assume all components on y axis have the same y length.
+	double y_axis = (bi->room_bbox.max_point.y * (double) room_index);
+	struct SUVector3D point = {0.0, y_axis /* Follow the white rabbit */, 0.0};
+	if (!sup_component_instance_move(*room, point)) return false;
 	return true;
 }
 
 bool sketchup_building_save(sketchup_building building, const char *file) {
-	sup_building_impl *building_impl = (sup_building_impl *)building.ptr;
-	enum SUResult res = SUModelSaveToFileWithVersion(building_impl->model, file, SUModelVersion_SU2021);
+	sup_building_impl *bi = BI(building);
+	enum SUResult res = SUModelSaveToFileWithVersion(bi->model, file, SUModelVersion_SU2021);
 	return (res == SU_ERROR_NONE);
 }
 
 bool sketchup_building_dtor(sketchup_building building) {
-	sup_building_impl *building_impl = (sup_building_impl *)building.ptr;
-	enum SUResult res = SUModelRelease(&building_impl->model);
-	free(building_impl);
+	sup_building_impl *bi = BI(building);
+	enum SUResult res = SUModelRelease(&bi->model);
+	free(building.ptr);
 	return (res == SU_ERROR_NONE);
 }
 
 bool sketchup_room_append_variable(sketchup_building building, size_t room_index, sketchup_val val) {
+	sup_building_impl *bi = BI(building);
 	if (room_index >= SUP_MAX_ROOMS) return false;
-	sup_building_impl *building_impl = (sup_building_impl *)building.ptr;
-	SUComponentInstanceRef room = building_impl->rooms[room_index];
+	SUComponentInstanceRef room = bi->rooms[room_index];
 	return true;
 }
 
