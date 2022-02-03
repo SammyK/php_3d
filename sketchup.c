@@ -38,7 +38,7 @@ static bool sup_copy_geometry(SUEntitiesRef dest, SUEntitiesRef src) {
 	size_t vertices_count = 0;
 	size_t face_count = 0;
 	SU_CALL_RETURN(SUEntitiesGetNumFaces(src, &face_count));
-	printf("Found %zu source faces\n", face_count);
+	//printf("Found %zu source faces\n", face_count);
 	if (face_count > 0) {
 		SUFaceRef faces[face_count];
 		SU_CALL_RETURN(SUEntitiesGetFaces(src, face_count, &faces[0], &face_count));
@@ -49,7 +49,7 @@ static bool sup_copy_geometry(SUEntitiesRef dest, SUEntitiesRef src) {
 		for (size_t i = 0; i < face_count; i++) {
 			size_t vertex_count = 0;
 			SU_CALL_RETURN(SUFaceGetNumVertices(faces[i], &vertex_count));
-			printf("\tCopying %zu source face #%zu vertices...", vertex_count, i);
+			//printf("\tCopying %zu source face #%zu vertices...", vertex_count, i);
 			if (vertex_count > 0) {
 				SUVertexRef vertices[vertex_count];
 				SU_CALL_RETURN(SUFaceGetVertices(faces[i], vertex_count, vertices, &vertex_count));
@@ -64,26 +64,26 @@ static bool sup_copy_geometry(SUEntitiesRef dest, SUEntitiesRef src) {
 					SU_CALL_RETURN(SUGeometryInputAddVertex(geom_input, &pos));
 					// Indexes are global to geom_input so we cannot use j for index
 					SU_CALL_RETURN(SULoopInputAddVertexIndex(loop, vertices_count++));
-					printf("#%zu, ", vertices_count - 1);
+					//printf("#%zu, ", vertices_count - 1);
 				}
-				printf("\n");
+				//printf("\n");
 
 				size_t face_index = 0;
 				SU_CALL_RETURN(SUGeometryInputAddFace(geom_input, &loop, &face_index));
-				printf("\t\tCopied face #%zu to index #%zu\n", i, face_index);
+				//printf("\t\tCopied face #%zu to index #%zu\n", i, face_index);
 
 				// Copy inner loops
 				size_t inner_loops_count = 0;
 				SU_CALL_RETURN(SUFaceGetNumInnerLoops(faces[i], &inner_loops_count));
 				if (inner_loops_count > 0) {
-					printf("\t\tSource face #%zu has %zu inner loops.\n", i, inner_loops_count);
+					//printf("\t\tSource face #%zu has %zu inner loops.\n", i, inner_loops_count);
 					SULoopRef inner_loops[inner_loops_count];
 					SU_CALL_RETURN(SUFaceGetInnerLoops(faces[i], inner_loops_count, inner_loops, &inner_loops_count));
 					for (size_t y = 0; y < inner_loops_count; ++y) {
 						size_t loop_vertex_count = 0;
 						SU_CALL_RETURN(SULoopGetNumVertices(inner_loops[y], &loop_vertex_count));
 						if (loop_vertex_count > 0) {
-							printf("\t\t\tInner loop #%zu has %zu vertices.\n", y, loop_vertex_count);
+							//printf("\t\t\tInner loop #%zu has %zu vertices.\n", y, loop_vertex_count);
 							SULoopInputRef inner_loop = SU_INVALID;
 							// TODO Free this if anything fails below
 							SU_CALL_RETURN(SULoopInputCreate(&inner_loop));
@@ -96,7 +96,7 @@ static bool sup_copy_geometry(SUEntitiesRef dest, SUEntitiesRef src) {
 								SU_CALL_RETURN(SUGeometryInputAddVertex(geom_input, &pos));
 								// Indexes are global to geom_input so we cannot use x for index
 								SU_CALL_RETURN(SULoopInputAddVertexIndex(inner_loop, vertices_count++));
-								printf("\t\t\tCopied inner vertex #%zu at {%f, %f, %f} to index #%zu\n", x, pos.x, pos.y, pos.z, vertices_count - 1);
+								//printf("\t\t\tCopied inner vertex #%zu at {%f, %f, %f} to index #%zu\n", x, pos.x, pos.y, pos.z, vertices_count - 1);
 							}
 							SU_CALL_RETURN(SUGeometryInputFaceAddInnerLoop(geom_input, face_index, &inner_loop));
 						}
@@ -104,7 +104,7 @@ static bool sup_copy_geometry(SUEntitiesRef dest, SUEntitiesRef src) {
 				}
 
 				// Copy front and back materials
-				printf("\t\tCopying materials to face at index #%zu\n", face_index);
+				//printf("\t\tCopying materials to face at index #%zu\n", face_index);
 				struct SUMaterialInput material_input = {0};
 				SUMaterialRef material = SU_INVALID;
 				enum SUResult res = SUFaceGetFrontMaterial(faces[i], &material);
@@ -141,14 +141,15 @@ static bool sup_copy_geometry(SUEntitiesRef dest, SUEntitiesRef src) {
 	SUGeometryInputRelease(&geom_input);
 
 	if (res != SU_ERROR_NONE) {
-		printf("Failed to fill dest geometry\n");
+		//printf("Failed to fill dest geometry\n");
 		return false;
 	}
-	printf("Successfully filled dest geometry\n");
+	//printf("Successfully filled dest geometry\n");
 	return true;
 }
 
-static bool sup_component_def_load(SUModelRef model, const char *name, const char *file, SUComponentDefinitionRef *def) {
+static bool sup_component_def_load(SUModelRef model, const char *file, SUComponentDefinitionRef *def) {
+	printf("Creating component definition from '%s'...\n", file);
 	// Init empty component def, attach to model, and get entities
 	// TODO Free component def if stuff fails below
 	SU_CALL_RETURN(SUComponentDefinitionCreate(def));
@@ -157,7 +158,7 @@ static bool sup_component_def_load(SUModelRef model, const char *name, const cha
 		SU_CALL_RETURN(SUComponentDefinitionRelease(def));
 		return false;
 	}
-	SU_CALL_RETURN(SUComponentDefinitionSetName(*def, name));
+	SU_CALL_RETURN(SUComponentDefinitionSetName(*def, file));
 
 	// Load model from file and get source entities
 	SUModelRef src_model = SU_INVALID;
@@ -214,15 +215,17 @@ void sketchup_shutdown(void) { SUTerminate(); }
 
 #define SUP_MAX_ROOMS 256
 
-// Ideally we'd track component defs on the model, but there seems to be a bug in the SketchUpAPI with getting the def name, description and Guid
 typedef struct sup_building_impl_s {
 	SUModelRef model;
 	SUComponentDefinitionRef room_def;
+	SUComponentDefinitionRef var_def;
+	SUComponentDefinitionRef wall_def;
+	SUComponentDefinitionRef entrance_def;
 	SUComponentInstanceRef rooms[SUP_MAX_ROOMS];
 } sup_building_impl;
 
 bool sketchup_building_ctor(sketchup_building *building) {
-	// Create new model
+	// Create a fresh model that we can load all the component defs into
 	SUModelRef model = SU_INVALID;
 	enum SUResult res = SUModelCreate(&model);
 	if (res != SU_ERROR_NONE) return false;
@@ -230,12 +233,17 @@ bool sketchup_building_ctor(sketchup_building *building) {
 	sup_building_impl *building_impl = (sup_building_impl *)calloc(1, sizeof(sup_building_impl));
 	building_impl->model = model;
 
-	// Create component defs from files and save to model
-	if (!sup_component_def_load(model, "room", "models/room.skp", &building_impl->room_def)) {
+	if (
+		!sup_component_def_load(model, "models/room.skp", &building_impl->room_def) ||
+		!sup_component_def_load(model, "models/var.skp", &building_impl->var_def) ||
+		!sup_component_def_load(model, "models/wall.skp", &building_impl->wall_def) ||
+		!sup_component_def_load(model, "models/entrance.skp", &building_impl->entrance_def)
+	) {
 		SUModelRelease(&model);
 		free(building_impl);
 		return false;
 	}
+
 	building->ptr = building_impl;
 	return true;
 }
