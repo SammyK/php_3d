@@ -6,12 +6,26 @@
 
 #include <php.h>
 #include <ext/standard/info.h>
+#include <Zend/zend_observer.h>
 
 #include "php_3d.h"
 #include "sketchup.h"
 
+void php3d_fcall_begin_handler(zend_execute_data *execute_data) {
+	//
+}
+
+void php3d_fcall_end_handler(zend_execute_data *execute_data, zval *retval) {
+	//
+}
+
+zend_observer_fcall_handlers php3d_observer_fcall_init(zend_execute_data *execute_data) {
+	return (zend_observer_fcall_handlers) {php3d_fcall_begin_handler, php3d_fcall_end_handler};
+}
+
 PHP_MINIT_FUNCTION(php_3d)
 {
+	zend_observer_fcall_register(php3d_observer_fcall_init);
 	sketchup_startup();
 	return SUCCESS;
 }
