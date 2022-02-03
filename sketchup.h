@@ -13,7 +13,8 @@ typedef struct sketchup_room_s {
 } sketchup_room;
 
 enum sketchup_val_type {
-    SKETCHUP_VAL_STRING = 0,
+    SKETCHUP_VAL_UNSUPPORTED = 0,
+    SKETCHUP_VAL_STRING,
     SKETCHUP_VAL_LONG,
     SKETCHUP_VAL_DOUBLE,
 };
