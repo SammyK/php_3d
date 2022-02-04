@@ -37,17 +37,22 @@ void static php3d_zval_to_sval(zval *zval, sketchup_val *sval) {
 	}
 }
 
-void static php3d_cv_to_3d(zend_array *symbol_table, size_t room_index) {
-	size_t var_index = 0;
-	zend_string *name;
-	zval *var;
-	ZEND_HASH_FOREACH_STR_KEY_VAL_IND(symbol_table, name, var) {
+void static php3d_cv_to_3d(zend_execute_data *execute_data, size_t room_index) {
+	if (!EX(func)) return;
+	size_t cv_count = (size_t) EX(func)->op_array.last_var;
+	if (!cv_count) return;
+
+	zend_string **cv_names = EX(func)->op_array.vars;
+	zval *var = ZEND_CALL_VAR_NUM(execute_data, 0);
+
+	for (size_t i = 0; i < cv_count; i++) {
 		sketchup_val sval = SKETCHUP_NULL;
 		php3d_zval_to_sval(var, &sval);
-		if (!sketchup_room_append_variable(php_3d_building, room_index, var_index++, ZSTR_VAL(name), sval)) {
+		if (!sketchup_room_append_variable(php_3d_building, room_index, i, ZSTR_VAL(cv_names[i]), sval)) {
 			php_log_err("[php_3d] Failed to append variable to room");
 		}
-	} ZEND_HASH_FOREACH_END();
+		var++;
+	}
 }
 
 void php3d_fcall_begin_handler(zend_execute_data *execute_data) {
@@ -73,9 +78,7 @@ void php3d_fcall_begin_handler(zend_execute_data *execute_data) {
 
 void php3d_fcall_end_handler(zend_execute_data *execute_data, zval *retval) {
 	if (EX(func) && PHP3D_G(generate_model) && php_3d_building.ptr) {
-		if (ZEND_CALL_INFO(execute_data) & ZEND_CALL_HAS_SYMBOL_TABLE) {
-			php3d_cv_to_3d(EX(symbol_table), php_3d_room_index - 1);
-		}
+		php3d_cv_to_3d(execute_data, php_3d_room_index - 1);
 	}
 }
 
