@@ -29,11 +29,11 @@ void sketchup_shutdown(void);
 
 // sketchup_startup() must have been called before calling any of the functions below
 bool sketchup_town_ctor(sketchup_town *town);
-bool sketchup_town_append_room(sketchup_town town, const char *name, size_t room_index);
+bool sketchup_town_append_room(sketchup_town town, const char *name, size_t room_index, size_t visit_index);
 bool sketchup_town_save(sketchup_town town, const char *file);
 bool sketchup_town_dtor(sketchup_town town);
 
-bool sketchup_room_append_variable(sketchup_town town, size_t room_index, size_t var_index, const char *name, sketchup_val val);
+bool sketchup_room_append_variable(sketchup_town town, size_t room_index, size_t visit_index, size_t var_index, const char *name, sketchup_val val);
 
 void sketchup_sdk_version(size_t bufsiz, char *version);
 

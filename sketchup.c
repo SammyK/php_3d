@@ -204,8 +204,6 @@ void sketchup_shutdown(void) { SUTerminate(); }
 
 #define TI(var) ((sup_town_impl *)var.ptr)
 
-#define SUP_MAX_ROOMS 1024
-
 typedef struct sup_town_impl_s {
 	SUModelRef model;
 	SUComponentDefinitionRef town_center_def;
@@ -214,7 +212,6 @@ typedef struct sup_town_impl_s {
 	struct SUBoundingBox3D town_center_bbox;
 	struct SUBoundingBox3D room_bbox;
 	struct SUBoundingBox3D var_bbox;
-	SUComponentInstanceRef rooms[SUP_MAX_ROOMS];
 } sup_town_impl;
 
 bool sketchup_town_ctor(sketchup_town *town) {
@@ -240,15 +237,13 @@ bool sketchup_town_ctor(sketchup_town *town) {
 	return true;
 }
 
-#define ROOM_LENGTH 360.0
-#define ROOM_WIDTH 504.0
 #define BUILDING_PAD 360.0
 
-// TODO Make a separate func for room z calc based on call/visit index
-void sketchup_room_xy_location(sup_town_impl *ti, size_t room_index, struct SUVector3D *point) {
+void sketchup_room_location(sup_town_impl *ti, size_t room_index, size_t visit_index, struct SUVector3D *point) {
 	if (room_index == 0) {
-		point->x = 0;
-		point->y = 0;
+		point->x = 0.0;
+		point->y = 0.0;
+		point->z = 0.0;
 		return;
 	}
 
@@ -282,25 +277,27 @@ void sketchup_room_xy_location(sup_town_impl *ti, size_t room_index, struct SUVe
 		point->y = (double) start;
 	}
 
-	point->x *= (ROOM_WIDTH + BUILDING_PAD);
-	point->y *= (ROOM_LENGTH + BUILDING_PAD);
+	point->x *= (ti->room_bbox.max_point.x + BUILDING_PAD);
+	point->y *= (ti->room_bbox.max_point.y + BUILDING_PAD);
+	point->z = ti->room_bbox.max_point.z * (double) visit_index;
 }
 
-bool sketchup_town_append_room(sketchup_town town, const char *name, size_t room_index) {
+// Arbitrary limit - not sure if this is necessary, but seems like we should have some kind of upper bounds limit
+#define SUP_MAX_ROOMS 5000
+
+bool sketchup_town_append_room(sketchup_town town, const char *name, size_t room_index, size_t visit_index) {
 	if (room_index >= SUP_MAX_ROOMS) return false;
 	sup_town_impl *ti = TI(town);
-	SUComponentInstanceRef *room = &ti->rooms[room_index];
-	if (room->ptr) return false;
-
-	if (!sup_component_def_create_instance(ti->model, (room_index ? ti->room_def : ti->town_center_def), room)) return false;
-	SU_CALL_RETURN(SUComponentInstanceSetName(*room, name));
+	SUComponentInstanceRef room = SU_INVALID;
+	if (!sup_component_def_create_instance(ti->model, (room_index ? ti->room_def : ti->town_center_def), &room)) return false;
+	SU_CALL_RETURN(SUComponentInstanceSetName(room, name));
 
 	// TODO Create a SUTextRef to display room name
 
 	// Move room to proper location in the town. We assume all room components are sized the same.
 	struct SUVector3D point = {0.0};
-	sketchup_room_xy_location(ti, room_index, &point);
-	if (!sup_component_instance_move(*room, point)) return false;
+	sketchup_room_location(ti, room_index, visit_index, &point);
+	if (!sup_component_instance_move(room, point)) return false;
 	return true;
 }
 
@@ -323,7 +320,7 @@ bool sketchup_town_dtor(sketchup_town town) {
 #define FLOOR_PAD 6.0
 #define FLOOR_PAD_TC 30.0
 
-bool sketchup_room_append_variable(sketchup_town town, size_t room_index, size_t var_index, const char *name, sketchup_val val) {
+bool sketchup_room_append_variable(sketchup_town town, size_t room_index, size_t visit_index, size_t var_index, const char *name, sketchup_val val) {
 	sup_town_impl *ti = TI(town);
 	if (room_index >= SUP_MAX_ROOMS) return false;
 
@@ -339,15 +336,17 @@ bool sketchup_room_append_variable(sketchup_town town, size_t room_index, size_t
 	size_t max_per_column = (size_t) (room_height / var_height);
 
 	struct SUVector3D room_point = {0.0};
-	sketchup_room_xy_location(ti, room_index, &room_point);
+	sketchup_room_location(ti, room_index, visit_index, &room_point);
 
+	struct SUVector3D point = {0.0};
 	double var_width = ti->var_bbox.max_point.x + VAR_PAD;
-	double x_axis = room_point.x + ROOM_PAD + var_width * (double) (var_index / max_per_column);
+	point.x = room_point.x + ROOM_PAD + var_width * (double) (var_index / max_per_column);
 
 	double room_top = room_point.y /* South */ + ti->room_bbox.max_point.y;
-	double y_axis = room_top - ROOM_PAD - (var_height * (double) (var_index % max_per_column));
+	point.y = room_top - ROOM_PAD - (var_height * (double) (var_index % max_per_column));
 
-	struct SUVector3D point = {x_axis, y_axis, (room_index ? FLOOR_PAD : FLOOR_PAD_TC)};
+	point.z = room_point.z + (room_index ? FLOOR_PAD : FLOOR_PAD_TC);
+
 	if (!sup_component_instance_move(var, point)) return false;
 	return true;
 }
