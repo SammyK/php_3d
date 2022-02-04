@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <math.h>
 
 #include <SketchUpAPI/common.h>
 #include <SketchUpAPI/initialize.h>
@@ -203,7 +204,7 @@ void sketchup_shutdown(void) { SUTerminate(); }
 
 #define TI(var) ((sup_town_impl *)var.ptr)
 
-#define SUP_MAX_ROOMS 256
+#define SUP_MAX_ROOMS 1024
 
 typedef struct sup_town_impl_s {
 	SUModelRef model;
@@ -239,10 +240,50 @@ bool sketchup_town_ctor(sketchup_town *town) {
 	return true;
 }
 
+#define ROOM_LENGTH 360.0
+#define ROOM_WIDTH 504.0
+#define BUILDING_PAD 360.0
+
 // TODO Make a separate func for room z calc based on call/visit index
 void sketchup_room_xy_location(sup_town_impl *ti, size_t room_index, struct SUVector3D *point) {
-	point->x = 0.0; // TODO
-	point->y = ((ti->room_bbox.max_point.y + /* pad */ 360.0) * (double) room_index);
+	if (room_index == 0) {
+		point->x = 0;
+		point->y = 0;
+		return;
+	}
+
+	// There's probably a fancy maths thing to calculate this more elegantly, but I'm no math wiz
+	double square = sqrt((double) room_index);
+	size_t size = (size_t) floor(square);
+	int max = (int) floor((size + 1) / 2);
+	int min = max * -1;
+	// TODO rename? What even is this?
+	int start = min;
+	int end = max;
+	// Odd
+	if ((size % 2) == 1) {
+		min++;
+		start = max;
+		end = min;
+	}
+
+	if (round(square) <= size) {
+		// All x are same
+		point->x = (double) start;
+		// This is a special corner so needs special treatment... for some reason
+		if (((size * size) + size) == room_index) {
+			point->y = point->x;
+		} else {
+			point->y = (double) end - (room_index % size);
+		}
+	} else {
+		point->x = (double) end - (room_index % size);
+		// All y are same
+		point->y = (double) start;
+	}
+
+	point->x *= (ROOM_WIDTH + BUILDING_PAD);
+	point->y *= (ROOM_LENGTH + BUILDING_PAD);
 }
 
 bool sketchup_town_append_room(sketchup_town town, const char *name, size_t room_index) {
@@ -256,7 +297,7 @@ bool sketchup_town_append_room(sketchup_town town, const char *name, size_t room
 
 	// TODO Create a SUTextRef to display room name
 
-	// Move room to proper offset on y axis. We assume all components on y axis have the same y length.
+	// Move room to proper location in the town. We assume all room components are sized the same.
 	struct SUVector3D point = {0.0};
 	sketchup_room_xy_location(ti, room_index, &point);
 	if (!sup_component_instance_move(*room, point)) return false;
@@ -297,12 +338,13 @@ bool sketchup_room_append_variable(sketchup_town town, size_t room_index, size_t
 	double var_height = ti->var_bbox.max_point.y + VAR_PAD;
 	size_t max_per_column = (size_t) (room_height / var_height);
 
-	double var_width = ti->var_bbox.max_point.x + VAR_PAD;
-	double x_axis = ROOM_PAD + var_width * (double) (var_index / max_per_column);
-
 	struct SUVector3D room_point = {0.0};
 	sketchup_room_xy_location(ti, room_index, &room_point);
-	double room_top = room_point.y /* SW */ + ti->room_bbox.max_point.y;
+
+	double var_width = ti->var_bbox.max_point.x + VAR_PAD;
+	double x_axis = room_point.x + ROOM_PAD + var_width * (double) (var_index / max_per_column);
+
+	double room_top = room_point.y /* South */ + ti->room_bbox.max_point.y;
 	double y_axis = room_top - ROOM_PAD - (var_height * (double) (var_index % max_per_column));
 
 	struct SUVector3D point = {x_axis, y_axis, (room_index ? FLOOR_PAD : FLOOR_PAD_TC)};
