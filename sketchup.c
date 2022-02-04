@@ -207,14 +207,12 @@ void sketchup_shutdown(void) { SUTerminate(); }
 
 typedef struct sup_building_impl_s {
 	SUModelRef model;
+	SUComponentDefinitionRef town_center_def;
 	SUComponentDefinitionRef room_def;
 	SUComponentDefinitionRef var_def;
-	SUComponentDefinitionRef wall_def;
-	SUComponentDefinitionRef entrance_def;
+	struct SUBoundingBox3D town_center_bbox;
 	struct SUBoundingBox3D room_bbox;
 	struct SUBoundingBox3D var_bbox;
-	struct SUBoundingBox3D wall_bbox;
-	struct SUBoundingBox3D entrance_bbox;
 	SUComponentInstanceRef rooms[SUP_MAX_ROOMS];
 } sup_building_impl;
 
@@ -228,10 +226,9 @@ bool sketchup_building_ctor(sketchup_building *building) {
 	bi->model = model;
 
 	if (
+		!sup_component_def_load(model, "models/town_center.skp", &bi->town_center_def, &bi->town_center_bbox) ||
 		!sup_component_def_load(model, "models/room.skp", &bi->room_def, &bi->room_bbox) ||
-		!sup_component_def_load(model, "models/var.skp", &bi->var_def, &bi->var_bbox) ||
-		!sup_component_def_load(model, "models/wall.skp", &bi->wall_def, &bi->wall_bbox) ||
-		!sup_component_def_load(model, "models/entrance.skp", &bi->entrance_def, &bi->entrance_bbox)
+		!sup_component_def_load(model, "models/var.skp", &bi->var_def, &bi->var_bbox)
 	) {
 		SUModelRelease(&model);
 		free(bi);
@@ -242,23 +239,26 @@ bool sketchup_building_ctor(sketchup_building *building) {
 	return true;
 }
 
+// TODO Make a separate func for room z calc based on call/visit index
+void sketchup_room_xy_location(sup_building_impl *bi, size_t room_index, struct SUVector3D *point) {
+	point->x = 0.0; // TODO
+	point->y = ((bi->room_bbox.max_point.y + /* pad */ 360.0) * (double) room_index);
+}
+
 bool sketchup_building_append_room(sketchup_building building, const char *name, size_t room_index) {
 	if (room_index >= SUP_MAX_ROOMS) return false;
 	sup_building_impl *bi = BI(building);
 	SUComponentInstanceRef *room = &bi->rooms[room_index];
 	if (room->ptr) return false;
 
-	if (!sup_component_def_create_instance(bi->model, bi->room_def, room)) return false;
+	if (!sup_component_def_create_instance(bi->model, (room_index ? bi->room_def : bi->town_center_def), room)) return false;
 	SU_CALL_RETURN(SUComponentInstanceSetName(*room, name));
 
 	// TODO Create a SUTextRef to display room name
 
 	// Move room to proper offset on y axis. We assume all components on y axis have the same y length.
-	struct SUVector3D point = {
-		0.0,
-		(bi->room_bbox.max_point.y * (double) room_index), /* Follow the white rabbit */
-		0.0
-	};
+	struct SUVector3D point = {0.0};
+	sketchup_room_xy_location(bi, room_index, &point);
 	if (!sup_component_instance_move(*room, point)) return false;
 	return true;
 }
@@ -279,6 +279,8 @@ bool sketchup_building_dtor(sketchup_building building) {
 #define WALL_WIDTH 6.0
 #define ROOM_PAD 24.0
 #define VAR_PAD 12.0
+#define FLOOR_PAD 6.0
+#define FLOOR_PAD_TC 30.0
 
 bool sketchup_room_append_variable(sketchup_building building, size_t room_index, size_t var_index, const char *name, sketchup_val val) {
 	sup_building_impl *bi = BI(building);
@@ -298,10 +300,12 @@ bool sketchup_room_append_variable(sketchup_building building, size_t room_index
 	double var_width = bi->var_bbox.max_point.x + VAR_PAD;
 	double x_axis = ROOM_PAD + var_width * (double) (var_index / max_per_column);
 
-	double room_top = bi->room_bbox.max_point.y * ((double) room_index + 1.0);
+	struct SUVector3D room_point = {0.0};
+	sketchup_room_xy_location(bi, room_index, &room_point);
+	double room_top = room_point.y /* SW */ + bi->room_bbox.max_point.y;
 	double y_axis = room_top - ROOM_PAD - (var_height * (double) (var_index % max_per_column));
 
-	struct SUVector3D point = {x_axis, y_axis, 0.0};
+	struct SUVector3D point = {x_axis, y_axis, (room_index ? FLOOR_PAD : FLOOR_PAD_TC)};
 	if (!sup_component_instance_move(var, point)) return false;
 	return true;
 }
