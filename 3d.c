@@ -71,14 +71,21 @@ void php3d_fcall_begin_handler(zend_execute_data *execute_data) {
 		// TODO Snapshot vars of pre_execute_data
 		char *scope = "";
 		char *sep = "";
-		if (EX(func)->common.scope) {
-			zend_class_entry *ce = zend_get_called_scope(execute_data);
-			if (ce) {
-				scope = ZSTR_VAL(ce->name);
-				sep = "::";
+		char *fname = "";
+		if (EX(func)->common.function_name) {
+			if (EX(func)->common.scope) {
+				zend_class_entry *ce = zend_get_called_scope(execute_data);
+				if (ce) {
+					scope = ZSTR_VAL(ce->name);
+					sep = "::";
+				}
 			}
+			fname = ZSTR_VAL(EX(func)->common.function_name);
+		} else {
+			scope = "{main}";
+			sep = ":";
+			fname = ZSTR_VAL(EX(func)->op_array.filename);
 		}
-		char *fname = EX(func)->common.function_name ? ZSTR_VAL(EX(func)->common.function_name) : "{main}";
 		char fqn[256];
 		snprintf(fqn, sizeof(fqn), "%s%s%s", scope, sep, fname);
 
