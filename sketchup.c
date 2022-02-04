@@ -282,9 +282,6 @@ void sketchup_room_location(sup_town_impl *ti, size_t room_index, size_t visit_i
 	point->z = ti->room_bbox.max_point.z * (double) visit_index;
 }
 
-// Arbitrary limit - not sure if this is necessary, but seems like we should have some kind of upper bounds limit
-#define SUP_MAX_ROOMS 5000
-
 bool sketchup_town_append_room(sketchup_town town, const char *name, size_t room_index, size_t visit_index) {
 	if (room_index >= SUP_MAX_ROOMS) return false;
 	sup_town_impl *ti = TI(town);

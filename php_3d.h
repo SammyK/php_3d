@@ -6,6 +6,7 @@
 extern zend_module_entry php_3d_module_entry;
 # define phpext_php_3d_ptr &php_3d_module_entry
 
+# define PHP_3D_NAME "php_3d"
 # define PHP_3D_VERSION "0.1.0"
 
 # if defined(ZTS) && defined(COMPILE_DL_PHP_3D)

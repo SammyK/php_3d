@@ -39,4 +39,7 @@ void sketchup_sdk_version(size_t bufsiz, char *version);
 
 #define SKETCHUP_NULL {0}
 
+// Arbitrary limit - not sure if this is necessary, but seems like we should have some kind of upper bounds limit
+#define SUP_MAX_ROOMS 5000
+
 #endif	/* SKETCHUP_H */

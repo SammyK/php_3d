@@ -6,6 +6,7 @@
 
 #include <php.h>
 #include <ext/standard/info.h>
+#include <Zend/zend_extensions.h>
 #include <Zend/zend_observer.h>
 
 #include "php_3d.h"
@@ -13,8 +14,18 @@
 
 ZEND_DECLARE_MODULE_GLOBALS(php_3d)
 
-ZEND_TLS sketchup_town php_3d_town;
-ZEND_TLS size_t php_3d_room_index;
+#define PHP3D_OP_ARRAY_EXTENSION(op_array) ZEND_OP_ARRAY_EXTENSION(op_array, php3d_op_array_extension)
+
+int php3d_op_array_extension = 0;
+
+typedef struct php3d_visit_info_s {
+	size_t room_index;
+	size_t visit_count;
+} php3d_visit_info;
+
+ZEND_TLS sketchup_town php3d_town;
+ZEND_TLS size_t php3d_room_next_index;
+ZEND_TLS php3d_visit_info php3d_room_visit_info[SUP_MAX_ROOMS];
 
 void static php3d_zval_to_sval(zval *zval, sketchup_val *sval) {
 	switch (Z_TYPE_INFO_P(zval)) {
@@ -37,7 +48,7 @@ void static php3d_zval_to_sval(zval *zval, sketchup_val *sval) {
 	}
 }
 
-void static php3d_cv_to_3d(zend_execute_data *execute_data, size_t room_index) {
+void static php3d_cv_to_3d(zend_execute_data *execute_data, size_t room_index, size_t visit_index) {
 	if (!EX(func)) return;
 	size_t cv_count = (size_t) EX(func)->op_array.last_var;
 	if (!cv_count) return;
@@ -48,7 +59,7 @@ void static php3d_cv_to_3d(zend_execute_data *execute_data, size_t room_index) {
 	for (size_t i = 0; i < cv_count; i++) {
 		sketchup_val sval = SKETCHUP_NULL;
 		php3d_zval_to_sval(var, &sval);
-		if (!sketchup_room_append_variable(php_3d_town, room_index, i, ZSTR_VAL(cv_names[i]), sval)) {
+		if (!sketchup_room_append_variable(php3d_town, room_index, visit_index, i, ZSTR_VAL(cv_names[i]), sval)) {
 			php_log_err("[php_3d] Failed to append variable to room");
 		}
 		var++;
@@ -56,7 +67,7 @@ void static php3d_cv_to_3d(zend_execute_data *execute_data, size_t room_index) {
 }
 
 void php3d_fcall_begin_handler(zend_execute_data *execute_data) {
-	if (EX(func) && PHP3D_G(generate_model) && php_3d_town.ptr) {
+	if (EX(func) && PHP3D_G(generate_model) && php3d_town.ptr) {
 		// TODO Snapshot vars of pre_execute_data
 		char *scope = "";
 		char *sep = "";
@@ -70,15 +81,29 @@ void php3d_fcall_begin_handler(zend_execute_data *execute_data) {
 		char *fname = EX(func)->common.function_name ? ZSTR_VAL(EX(func)->common.function_name) : "{main}";
 		char fqn[256];
 		snprintf(fqn, sizeof(fqn), "%s%s%s", scope, sep, fname);
-		if (!sketchup_town_append_room(php_3d_town, fqn, php_3d_room_index++)) {
+
+		php3d_visit_info *visit = (php3d_visit_info *)PHP3D_OP_ARRAY_EXTENSION(&EX(func)->op_array);
+		if (!visit) {
+			visit = PHP3D_OP_ARRAY_EXTENSION(&EX(func)->op_array) = &php3d_room_visit_info[php3d_room_next_index];
+			visit->room_index = php3d_room_next_index;
+			visit->visit_count = 0;
+			php3d_room_next_index++;
+		} else {
+			visit->visit_count++;
+		}
+
+		if (!sketchup_town_append_room(php3d_town, fqn, visit->room_index, visit->visit_count)) {
 			php_log_err("[php_3d] Failed to append room to town");
 		}
 	}
 }
 
 void php3d_fcall_end_handler(zend_execute_data *execute_data, zval *retval) {
-	if (EX(func) && PHP3D_G(generate_model) && php_3d_town.ptr) {
-		php3d_cv_to_3d(execute_data, php_3d_room_index - 1);
+	if (EX(func) && PHP3D_G(generate_model) && php3d_town.ptr) {
+		php3d_visit_info *visit = (php3d_visit_info *)PHP3D_OP_ARRAY_EXTENSION(&EX(func)->op_array);
+		ZEND_ASSERT(visit);
+		// TODO Fix visit count issue
+		php3d_cv_to_3d(execute_data, visit->room_index, visit->visit_count);
 	}
 }
 
@@ -92,11 +117,13 @@ static void php_3d_init_globals(zend_php_3d_globals *g)
 }
 
 PHP_INI_BEGIN()
-	STD_PHP_INI_BOOLEAN("php_3d.generate_model", "0", PHP_INI_SYSTEM, OnUpdateBool, generate_model, zend_php_3d_globals, php_3d_globals)
+	STD_PHP_INI_BOOLEAN(PHP_3D_NAME ".generate_model", "0", PHP_INI_SYSTEM, OnUpdateBool, generate_model, zend_php_3d_globals, php_3d_globals)
 PHP_INI_END()
 
 PHP_MINIT_FUNCTION(php_3d)
 {
+	php3d_op_array_extension = zend_get_op_array_extension_handle(PHP_3D_NAME);
+
 	ZEND_INIT_MODULE_GLOBALS(php_3d, php_3d_init_globals, NULL);
 	REGISTER_INI_ENTRIES();
 
@@ -116,11 +143,11 @@ PHP_RINIT_FUNCTION(php_3d)
 #if defined(ZTS) && defined(COMPILE_DL_PHP_3D)
 	ZEND_TSRMLS_CACHE_UPDATE();
 #endif
-	php_3d_town.ptr = NULL;
-	php_3d_room_index = 0;
+	php3d_town.ptr = NULL;
+	php3d_room_next_index = 0;
 
 	if (PHP3D_G(generate_model)) {
-		if (!sketchup_town_ctor(&php_3d_town)) {
+		if (!sketchup_town_ctor(&php3d_town)) {
 			php_log_err("[php_3d] Failed to ctor town");
 		}
 	}
@@ -134,11 +161,11 @@ PHP_RSHUTDOWN_FUNCTION(php_3d)
 	ZEND_TSRMLS_CACHE_UPDATE();
 #endif
 
-	if (PHP3D_G(generate_model) && php_3d_town.ptr) {
-		if (!sketchup_town_save(php_3d_town, "php.skp")) {
+	if (PHP3D_G(generate_model) && php3d_town.ptr) {
+		if (!sketchup_town_save(php3d_town, "php.skp")) {
 			php_log_err("[php_3d] Failed to save .skp file");
 		}
-		if (!sketchup_town_dtor(php_3d_town)) {
+		if (!sketchup_town_dtor(php3d_town)) {
 			php_log_err("[php_3d] Failed to dtor town");
 		}
 	}
@@ -160,7 +187,7 @@ PHP_MINFO_FUNCTION(php_3d)
 
 zend_module_entry php_3d_module_entry = {
 	STANDARD_MODULE_HEADER,
-	"php_3d",					/* Extension name */
+	PHP_3D_NAME,				/* Extension name */
 	NULL,						/* zend_function_entry */
 	PHP_MINIT(php_3d),			/* PHP_MINIT - Module initialization */
 	PHP_MSHUTDOWN(php_3d),		/* PHP_MSHUTDOWN - Module shutdown */
