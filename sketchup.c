@@ -11,6 +11,7 @@
 #include <SketchUpAPI/geometry.h>
 #include <SketchUpAPI/geometry/transformation.h>
 #include <SketchUpAPI/model/model.h>
+#include <SketchUpAPI/model/camera.h>
 #include <SketchUpAPI/model/component_definition.h>
 #include <SketchUpAPI/model/component_instance.h>
 #include <SketchUpAPI/model/entities.h>
@@ -21,6 +22,8 @@
 #include <SketchUpAPI/model/group.h>
 #include <SketchUpAPI/model/geometry_input.h>
 #include <SketchUpAPI/model/material.h>
+#include <SketchUpAPI/model/scene.h>
+#include <SketchUpAPI/model/styles.h>
 #include <SketchUpAPI/model/vertex.h>
 
 #define SU_CALL_RETURN(func) { \
@@ -298,12 +301,6 @@ bool sketchup_town_append_room(sketchup_town town, const char *name, size_t room
 	return true;
 }
 
-bool sketchup_town_save(sketchup_town town, const char *file) {
-	sup_town_impl *ti = TI(town);
-	enum SUResult res = SUModelSaveToFileWithVersion(ti->model, file, SUModelVersion_SU2021);
-	return (res == SU_ERROR_NONE);
-}
-
 bool sketchup_town_dtor(sketchup_town town) {
 	sup_town_impl *ti = TI(town);
 	enum SUResult res = SUModelRelease(&ti->model);
@@ -311,7 +308,8 @@ bool sketchup_town_dtor(sketchup_town town) {
 	return (res == SU_ERROR_NONE);
 }
 
-#define WALL_WIDTH 6.0
+#define WALL_DEPTH 6.0
+#define WALL_DEPTH_TC 84.0
 #define ROOM_PAD 24.0
 #define VAR_PAD 12.0
 #define FLOOR_PAD 6.0
@@ -328,7 +326,8 @@ bool sketchup_room_append_variable(sketchup_town town, size_t room_index, size_t
 	// TODO Create a SUTextRef to display name & var data
 
 	// Calculate var location relative to room
-	double room_height = ti->room_bbox.max_point.y - WALL_WIDTH /* Rooms have only one wall on y axis */;
+	double wall_depth_y = room_index ? WALL_DEPTH /* Rooms have only one wall on y axis */ : WALL_DEPTH_TC * 2;
+	double room_height = ti->room_bbox.max_point.y - wall_depth_y;
 	double var_height = ti->var_bbox.max_point.y + VAR_PAD;
 	size_t max_per_column = (size_t) (room_height / var_height);
 
@@ -337,15 +336,50 @@ bool sketchup_room_append_variable(sketchup_town town, size_t room_index, size_t
 
 	struct SUVector3D point = {0.0};
 	double var_width = ti->var_bbox.max_point.x + VAR_PAD;
-	point.x = room_point.x + ROOM_PAD + var_width * (double) (var_index / max_per_column);
+	double wall_depth_x = room_index ? WALL_DEPTH : WALL_DEPTH_TC;
+	point.x = room_point.x + wall_depth_x + ROOM_PAD + var_width * (double) (var_index / max_per_column);
 
 	double room_top = room_point.y /* South */ + ti->room_bbox.max_point.y;
-	point.y = room_top - ROOM_PAD - (var_height * (double) (var_index % max_per_column));
+	point.y = room_top - wall_depth_x - ROOM_PAD - (var_height * (double) (var_index % max_per_column));
 
 	point.z = room_point.z + (room_index ? FLOOR_PAD : FLOOR_PAD_TC);
 
 	if (!sup_component_instance_move(var, point)) return false;
 	return true;
+}
+
+#define HUMAN_HEIGHT_INCHES 72.0
+
+bool sketchup_town_save(sketchup_town town, const char *file) {
+	sup_town_impl *ti = TI(town);
+
+	// Set the scene
+	SUSceneRef scene = SU_INVALID;
+	SU_CALL_RETURN(SUSceneCreate(&scene));
+	int scene_index = 0;
+	SU_CALL_RETURN(SUModelAddScene(ti->model, scene_index, scene, &scene_index));
+	SU_CALL_RETURN(SUSceneSetName(scene, "PHP"));
+	SU_CALL_RETURN(SUModelSetActiveScene(ti->model, scene));
+
+	// Load styles
+	SUStylesRef model_styles = SU_INVALID;
+	SU_CALL_RETURN(SUModelGetStyles(ti->model, &model_styles));
+	SU_CALL_RETURN(SUStylesAddStyle(model_styles, "models/style.style", true));
+
+	// Camera
+	SU_CALL_RETURN(SUSceneSetUseCamera(scene, true));
+	SUCameraRef camera = SU_INVALID;
+	SU_CALL_RETURN(SUSceneGetCamera(scene, &camera));
+	const struct SUPoint3D position = {(-BUILDING_PAD + 42), (-BUILDING_PAD + 42), HUMAN_HEIGHT_INCHES};
+	const struct SUPoint3D target = ti->town_center_bbox.max_point;
+	const struct SUVector3D up_vector = {0.0, 0.0, 1.0};
+	SU_CALL_RETURN(SUCameraSetOrientation(camera, &position, &target, &up_vector));
+
+	// Uncomment to have camera set up when you open the file
+	//SU_CALL_RETURN(SUSceneActivate(scene));
+
+	enum SUResult res = SUModelSaveToFileWithVersion(ti->model, file, SUModelVersion_SU2021);
+	return (res == SU_ERROR_NONE);
 }
 
 void sketchup_sdk_version(size_t bufsiz, char *version) {
