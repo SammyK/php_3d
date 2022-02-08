@@ -173,7 +173,9 @@ static bool sup_component_def_load(SUModelRef model, const char *file, SUCompone
 	SU_CALL_RETURN(SUModelGetEntities(src_model, &src_entities));
 
 	// Get the bounding box size
-	SU_CALL_RETURN(SUEntitiesGetBoundingBox(src_entities, bbox));
+	if (bbox) {
+		SU_CALL_RETURN(SUEntitiesGetBoundingBox(src_entities, bbox));
+	}
 
 	// Get dest entities from component def
 	SUEntitiesRef dest_entities = SU_INVALID;
@@ -212,6 +214,17 @@ typedef struct sup_town_impl_s {
 	SUComponentDefinitionRef town_center_def;
 	SUComponentDefinitionRef room_def;
 	SUComponentDefinitionRef var_def;
+	SUComponentDefinitionRef var_undef_def;
+	SUComponentDefinitionRef var_null_def;
+	SUComponentDefinitionRef var_false_def;
+	SUComponentDefinitionRef var_true_def;
+	SUComponentDefinitionRef var_long_def;
+	SUComponentDefinitionRef var_double_def;
+	SUComponentDefinitionRef var_string_def;
+	SUComponentDefinitionRef var_array_def;
+	SUComponentDefinitionRef var_object_def;
+	SUComponentDefinitionRef var_resource_def;
+	SUComponentDefinitionRef var_reference_def;
 	struct SUBoundingBox3D town_center_bbox;
 	struct SUBoundingBox3D room_bbox;
 	struct SUBoundingBox3D var_bbox;
@@ -229,7 +242,18 @@ bool sketchup_town_ctor(sketchup_town *town) {
 	if (
 		!sup_component_def_load(model, "models/town_center.skp", &ti->town_center_def, &ti->town_center_bbox) ||
 		!sup_component_def_load(model, "models/room.skp", &ti->room_def, &ti->room_bbox) ||
-		!sup_component_def_load(model, "models/var.skp", &ti->var_def, &ti->var_bbox)
+		!sup_component_def_load(model, "models/var.skp", &ti->var_def, &ti->var_bbox) ||
+		/* >> */ !sup_component_def_load(model, "models/var.skp", &ti->var_undef_def, NULL) ||
+		!sup_component_def_load(model, "models/var_null.skp", &ti->var_null_def, NULL) ||
+		!sup_component_def_load(model, "models/var_false.skp", &ti->var_false_def, NULL) ||
+		!sup_component_def_load(model, "models/var_true.skp", &ti->var_true_def, NULL) ||
+		!sup_component_def_load(model, "models/var_long.skp", &ti->var_long_def, NULL) ||
+		!sup_component_def_load(model, "models/var_double.skp", &ti->var_double_def, NULL) ||
+		!sup_component_def_load(model, "models/var_string.skp", &ti->var_string_def, NULL) ||
+		!sup_component_def_load(model, "models/var_array.skp", &ti->var_array_def, NULL) ||
+		!sup_component_def_load(model, "models/var_object.skp", &ti->var_object_def, NULL) ||
+		!sup_component_def_load(model, "models/var_resource.skp", &ti->var_resource_def, NULL) ||
+		!sup_component_def_load(model, "models/var_reference.skp", &ti->var_reference_def, NULL)
 	) {
 		SUModelRelease(&model);
 		free(ti);
@@ -319,8 +343,48 @@ bool sketchup_room_append_variable(sketchup_town town, size_t room_index, size_t
 	sup_town_impl *ti = TI(town);
 	if (room_index >= SUP_MAX_ROOMS) return false;
 
+	SUComponentDefinitionRef def = SU_INVALID;
+	switch (val.type) {
+		case SKETCHUP_VAL_UNDEF:
+			def = ti->var_undef_def;
+			break;
+		case SKETCHUP_VAL_NULL:
+			def = ti->var_null_def;
+			break;
+		case SKETCHUP_VAL_FALSE:
+			def = ti->var_false_def;
+			break;
+		case SKETCHUP_VAL_TRUE:
+			def = ti->var_true_def;
+			break;
+		case SKETCHUP_VAL_LONG:
+			def = ti->var_long_def;
+			break;
+		case SKETCHUP_VAL_DOUBLE:
+			def = ti->var_double_def;
+			break;
+		case SKETCHUP_VAL_STRING:
+			def = ti->var_string_def;
+			break;
+		case SKETCHUP_VAL_ARRAY:
+			def = ti->var_array_def;
+			break;
+		case SKETCHUP_VAL_OBJECT:
+			def = ti->var_object_def;
+			break;
+		case SKETCHUP_VAL_RESOURCE:
+			def = ti->var_resource_def;
+			break;
+		case SKETCHUP_VAL_REFERENCE:
+			def = ti->var_reference_def;
+			break;
+		default:
+			def = ti->var_def;
+			break;
+	}
+
 	SUComponentInstanceRef var = SU_INVALID;
-	if (!sup_component_def_create_instance(ti->model, ti->var_def, &var)) return false;
+	if (!sup_component_def_create_instance(ti->model, def, &var)) return false;
 	SU_CALL_RETURN(SUComponentInstanceSetName(var, name));
 
 	// TODO Create a SUTextRef to display name & var data

@@ -14,9 +14,17 @@ typedef struct sketchup_room_s {
 
 enum sketchup_val_type {
     SKETCHUP_VAL_UNSUPPORTED = 0,
-    SKETCHUP_VAL_STRING,
+    SKETCHUP_VAL_UNDEF,
+    SKETCHUP_VAL_NULL,
+    SKETCHUP_VAL_FALSE,
+    SKETCHUP_VAL_TRUE,
     SKETCHUP_VAL_LONG,
     SKETCHUP_VAL_DOUBLE,
+    SKETCHUP_VAL_STRING,
+    SKETCHUP_VAL_ARRAY,
+    SKETCHUP_VAL_OBJECT,
+    SKETCHUP_VAL_RESOURCE,
+    SKETCHUP_VAL_REFERENCE,
 };
 
 typedef struct sketchup_val_s {

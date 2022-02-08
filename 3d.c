@@ -28,10 +28,19 @@ ZEND_TLS size_t php3d_room_next_index;
 ZEND_TLS php3d_visit_info php3d_room_visit_info[SUP_MAX_ROOMS];
 
 void static php3d_zval_to_sval(zval *zval, sketchup_val *sval) {
-	switch (Z_TYPE_INFO_P(zval)) {
-		case IS_STRING:
-			sval->type = SKETCHUP_VAL_STRING;
-			sval->ptr = (void *) Z_STRVAL_P(zval);
+	sval->ptr = NULL;
+	switch (Z_TYPE_P(zval)) {
+		case IS_UNDEF:
+			sval->type = SKETCHUP_VAL_UNDEF;
+			break;
+		case IS_NULL:
+			sval->type = SKETCHUP_VAL_NULL;
+			break;
+		case IS_FALSE:
+			sval->type = SKETCHUP_VAL_FALSE;
+			break;
+		case IS_TRUE:
+			sval->type = SKETCHUP_VAL_TRUE;
 			break;
 		case IS_LONG:
 			sval->type = SKETCHUP_VAL_LONG;
@@ -41,9 +50,28 @@ void static php3d_zval_to_sval(zval *zval, sketchup_val *sval) {
 			sval->type = SKETCHUP_VAL_DOUBLE;
 			sval->ptr = &Z_DVAL_P(zval);
 			break;
+		case IS_STRING:
+			sval->type = SKETCHUP_VAL_STRING;
+			sval->ptr = (void *) Z_STRVAL_P(zval);
+			break;
+		case IS_ARRAY:
+			sval->type = SKETCHUP_VAL_ARRAY;
+			sval->ptr = (void *) Z_ARRVAL_P(zval);
+			break;
+		case IS_OBJECT:
+			sval->type = SKETCHUP_VAL_OBJECT;
+			sval->ptr = (void *) Z_OBJ_P(zval);
+			break;
+		case IS_RESOURCE:
+			sval->type = SKETCHUP_VAL_RESOURCE;
+			sval->ptr = (void *) Z_RES_P(zval);
+			break;
+		case IS_REFERENCE:
+			sval->type = SKETCHUP_VAL_REFERENCE;
+			sval->ptr = (void *) Z_REF_P(zval);
+			break;
 		default:
 			sval->type = SKETCHUP_VAL_UNSUPPORTED;
-			sval->ptr = NULL;
 			break;
 	}
 }
