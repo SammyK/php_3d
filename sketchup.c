@@ -209,10 +209,19 @@ void sketchup_shutdown(void) { SUTerminate(); }
 
 #define TI(var) ((sup_town_impl *)var.ptr)
 
+// Keeping track of the first floor is a workaround for
+// a) a bug in the SketchUpAPI that doesn't let us fetch the name of things and
+// b) a lack of an intermediate "runtime movie" datatype
+typedef struct sup_first_floor_s {
+	size_t last_visit_index;
+	char name[255];
+} sup_first_floor;
+
 typedef struct sup_town_impl_s {
 	SUModelRef model;
 	SUComponentDefinitionRef town_center_def;
 	SUComponentDefinitionRef room_def;
+	SUComponentDefinitionRef house_def;
 	SUComponentDefinitionRef var_def;
 	SUComponentDefinitionRef var_undef_def;
 	SUComponentDefinitionRef var_null_def;
@@ -228,6 +237,8 @@ typedef struct sup_town_impl_s {
 	struct SUBoundingBox3D town_center_bbox;
 	struct SUBoundingBox3D room_bbox;
 	struct SUBoundingBox3D var_bbox;
+	size_t max_room_index;
+	sup_first_floor first_floors[SUP_MAX_ROOMS];
 } sup_town_impl;
 
 bool sketchup_town_ctor(sketchup_town *town) {
@@ -242,6 +253,7 @@ bool sketchup_town_ctor(sketchup_town *town) {
 	if (
 		!sup_component_def_load(model, "models/town_center.skp", &ti->town_center_def, &ti->town_center_bbox) ||
 		!sup_component_def_load(model, "models/room.skp", &ti->room_def, &ti->room_bbox) ||
+		!sup_component_def_load(model, "models/house.skp", &ti->house_def, NULL) ||
 		!sup_component_def_load(model, "models/var.skp", &ti->var_def, &ti->var_bbox) ||
 		/* >> */ !sup_component_def_load(model, "models/var.skp", &ti->var_undef_def, NULL) ||
 		!sup_component_def_load(model, "models/var_null.skp", &ti->var_null_def, NULL) ||
@@ -309,11 +321,9 @@ void sketchup_room_location(sup_town_impl *ti, size_t room_index, size_t visit_i
 	point->z = ti->room_bbox.max_point.z * (double) visit_index;
 }
 
-bool sketchup_town_append_room(sketchup_town town, const char *name, size_t room_index, size_t visit_index) {
-	if (room_index >= SUP_MAX_ROOMS) return false;
-	sup_town_impl *ti = TI(town);
+static bool sup_town_append_room_ex(sup_town_impl *ti, SUComponentDefinitionRef def, const char *name, size_t room_index, size_t visit_index) {
 	SUComponentInstanceRef room = SU_INVALID;
-	if (!sup_component_def_create_instance(ti->model, (room_index ? ti->room_def : ti->town_center_def), &room)) return false;
+	if (!sup_component_def_create_instance(ti->model, def, &room)) return false;
 	SU_CALL_RETURN(SUComponentInstanceSetName(room, name));
 
 	// TODO Create a SUTextRef to display room name
@@ -323,6 +333,24 @@ bool sketchup_town_append_room(sketchup_town town, const char *name, size_t room
 	sketchup_room_location(ti, room_index, visit_index, &point);
 	if (!sup_component_instance_move(room, point)) return false;
 	return true;
+}
+
+bool sketchup_town_append_room(sketchup_town town, const char *name, size_t room_index, size_t visit_index) {
+	if (room_index >= SUP_MAX_ROOMS) return false;
+	sup_town_impl *ti = TI(town);
+	if (room_index > ti->max_room_index) {
+		ti->max_room_index = room_index;
+	}
+	
+	sup_first_floor *floor = &ti->first_floors[room_index];
+	floor->last_visit_index = visit_index;
+	// Delay creating the first floor to add cooler models later
+	if (room_index /* town center is special case */ && visit_index == 0) {
+		snprintf(floor->name, 255, "%s", name);
+		return true;
+	}
+
+	return sup_town_append_room_ex(ti, (room_index ? ti->room_def : ti->town_center_def), name, room_index, visit_index);
 }
 
 bool sketchup_town_dtor(sketchup_town town) {
@@ -412,10 +440,23 @@ bool sketchup_room_append_variable(sketchup_town town, size_t room_index, size_t
 	return true;
 }
 
+static bool sup_create_first_floors(sup_town_impl *ti) {
+	for (size_t i = 1 /* town center is 0 */; i <= ti->max_room_index; i++) {
+		sup_first_floor *floor = &ti->first_floors[i];
+		
+		SUComponentDefinitionRef def = (floor->last_visit_index == 0) ? ti->house_def : ti->room_def;
+		if (!sup_town_append_room_ex(ti, def, floor->name, i, 0)) return false;
+	}
+	return true;
+}
+
 #define HUMAN_HEIGHT_INCHES 72.0
 
 bool sketchup_town_save(sketchup_town town, const char *file) {
 	sup_town_impl *ti = TI(town);
+
+	// Create instances for all the first floors
+	sup_create_first_floors(ti);
 
 	// Set the scene
 	SUSceneRef scene = SU_INVALID;
