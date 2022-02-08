@@ -188,8 +188,9 @@ PHP_MINFO_FUNCTION(php_3d)
 	char tmp[10];
 	sketchup_sdk_version(sizeof(tmp), tmp);
 	php_info_print_table_row(2, "SketchUpAPI version", tmp);
-
 	php_info_print_table_end();
+
+	DISPLAY_INI_ENTRIES();
 }
 
 zend_module_entry php_3d_module_entry = {
